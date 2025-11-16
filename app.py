@@ -5,6 +5,7 @@ from langchain_openai import ChatOpenAI
 from langchain.chains import create_retrieval_chain
 from langchain.chains.combine_documents import create_stuff_documents_chain
 from langchain_core.prompts import ChatPromptTemplate
+from langchain.memory import ConversationBufferMemory
 from dotenv import load_dotenv
 from src.prompt import *
 import os
@@ -32,9 +33,13 @@ docsearch = PineconeVectorStore.from_existing_index(
 )
 
 
-
-
 retriever = docsearch.as_retriever(search_type="similarity", search_kwargs={"k":3})
+
+memory = ConversationBufferMemory(
+    memory_key="chat_history",
+    return_messages=False 
+)
+
 
 chatModel = ChatOpenAI(model="gpt-4o")
 prompt = ChatPromptTemplate.from_messages(
@@ -58,11 +63,26 @@ def index():
 @app.route("/get", methods=["GET", "POST"])
 def chat():
     msg = request.form["msg"]
-    input = msg
-    print(input)
-    response = rag_chain.invoke({"input": msg})
-    print("Response : ", response["answer"])
-    return str(response["answer"])
+
+    # Take present history
+    mem_vars = memory.load_memory_variables({})
+    chat_history = mem_vars.get("chat_history", "")
+
+    # Call RAG chain
+    response = rag_chain.invoke({
+        "input": msg,
+        "chat_history": chat_history
+    })
+
+    answer = response["answer"]
+
+    # Save to memory
+    memory.save_context({"input": msg}, {"output": answer})
+
+    print("User:", msg)
+    print("Bot:", answer)
+
+    return str(answer)
 
 
 
